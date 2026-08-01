@@ -3,6 +3,7 @@ local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualUser = game:GetService("VirtualUser")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
@@ -233,66 +234,36 @@ local function stopFlying()
 end
 
 -- ==========================================
--- SMART FAST AUTO ATTACK (SPAM)
+-- FIXED AUTO ATTACK FOR DELTA/MOBILE
 -- ==========================================
--- Перевіряємо, чи є ворог у зоні досяжності хітбокса (радіус 25 стадів)
-local function isTargetInRange(radius)
-	local char = Player.Character
-	if not char or not char:FindFirstChild("HumanoidRootPart") then return false end
-	local hrp = char.HumanoidRootPart
-	
-	local targets = {}
-	if workspace:FindFirstChild("Enemies") then
-		for _, v in pairs(workspace.Enemies:GetChildren()) do table.insert(targets, v) end
-	end
-	if workspace:FindFirstChild("Characters") then
-		for _, v in pairs(workspace.Characters:GetChildren()) do 
-			if v ~= char then table.insert(targets, v) end
-		end
-	end
-	
-	for _, targetChar in pairs(targets) do
-		local t_hrp = targetChar:FindFirstChild("HumanoidRootPart")
-		local t_hum = targetChar:FindFirstChild("Humanoid")
-		if t_hrp and t_hum and t_hum.Health > 0 then
-			if (hrp.Position - t_hrp.Position).Magnitude <= radius then
-				return true
-			end
-		end
-	end
-	
-	return false
-end
-
-local autoAttackConnection = nil
+local autoAttackActive = false
 local fastAttackActiveUI = false
 
 local function toggleAutoAttack(state)
+	autoAttackActive = state
 	if state then
-		if not autoAttackConnection then
-			autoAttackConnection = RunService.Heartbeat:Connect(function()
+		task.spawn(function()
+			while autoAttackActive do
+				task.wait(0.1) -- Оптимальна затримка для реєстрації шкоди сервером
 				local char = Player.Character
-				-- Атакуємо ТІЛЬКИ якщо хтось реально є в радіусі нашого хітбокса (25 стадів)
-				if char and isTargetInRange(25) then
+				if char then
 					local tool = char:FindFirstChildOfClass("Tool")
 					if tool then
 						pcall(function() tool:Activate() end)
 					end
+					
+					-- Альтернативні методи кліку для гарантії на Delta
 					pcall(function()
-						local cam = workspace.CurrentCamera
-						if cam then
-							VirtualUser:CaptureController()
-							VirtualUser:ClickButton1(Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2))
-						end
+						VirtualUser:CaptureController()
+						VirtualUser:ClickButton1(Vector2.new(50, 50))
+					end)
+					pcall(function()
+						VirtualInputManager:SendMouseButtonEvent(50, 50, 0, true, game, 1)
+						VirtualInputManager:SendMouseButtonEvent(50, 50, 0, false, game, 1)
 					end)
 				end
-			end)
-		end
-	else
-		if autoAttackConnection then
-			autoAttackConnection:Disconnect()
-			autoAttackConnection = nil
-		end
+			end
+		end)
 	end
 end
 
@@ -307,7 +278,6 @@ fastAttackBtn.MouseButton1Click:Connect(function()
 		fastAttackBtn.Text = "FastAttack"
 		fastAttackBtn.TextColor3 = PURPLE_TEXT
 		fastAttackBtn.BorderColor3 = PURPLE_BORDER
-		-- Вимикаємо тільки якщо і MobFarm вимкнений, щоб не конфліктували
 		if not mobFarmActive then
 			toggleAutoAttack(false)
 		end
@@ -509,9 +479,10 @@ local function startMobFarm()
 				local npc = workspace.NPCs:FindFirstChild(targetQuest.NPCName)
 				
 				if npc and npc:FindFirstChild("HumanoidRootPart") then
+					-- Змінено дистанцію до 8 стадів, щоб сервер Blox Fruits дозволив взяти квест
 					flyTo(npc.HumanoidRootPart.CFrame, 300, function()
 						return mobFarmActive and (not questGui or not questGui.Visible)
-					end, 15)
+					end, 8)
 					
 					if mobFarmActive and (not questGui or not questGui.Visible) then
 						pcall(function()
@@ -606,7 +577,7 @@ mobFarmBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- HITBOX ACCURATE LOGIC (FIXED)
+-- HITBOX ACCURATE LOGIC
 -- ==========================================
 local hitboxActive = false
 local HITBOX_SIZE = Vector3.new(30, 30, 30)
