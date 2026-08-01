@@ -233,26 +233,55 @@ local function stopFlying()
 end
 
 -- ==========================================
--- FIXED FAST AUTO ATTACK (SPAM)
+-- SMART FAST AUTO ATTACK (SPAM)
 -- ==========================================
+-- Перевіряємо, чи є ворог у зоні досяжності хітбокса (радіус 25 стадів)
+local function isTargetInRange(radius)
+	local char = Player.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return false end
+	local hrp = char.HumanoidRootPart
+	
+	local targets = {}
+	if workspace:FindFirstChild("Enemies") then
+		for _, v in pairs(workspace.Enemies:GetChildren()) do table.insert(targets, v) end
+	end
+	if workspace:FindFirstChild("Characters") then
+		for _, v in pairs(workspace.Characters:GetChildren()) do 
+			if v ~= char then table.insert(targets, v) end
+		end
+	end
+	
+	for _, targetChar in pairs(targets) do
+		local t_hrp = targetChar:FindFirstChild("HumanoidRootPart")
+		local t_hum = targetChar:FindFirstChild("Humanoid")
+		if t_hrp and t_hum and t_hum.Health > 0 then
+			if (hrp.Position - t_hrp.Position).Magnitude <= radius then
+				return true
+			end
+		end
+	end
+	
+	return false
+end
+
 local autoAttackConnection = nil
+local fastAttackActiveUI = false
+
 local function toggleAutoAttack(state)
 	if state then
 		if not autoAttackConnection then
 			autoAttackConnection = RunService.Heartbeat:Connect(function()
 				local char = Player.Character
-				if char then
+				-- Атакуємо ТІЛЬКИ якщо хтось реально є в радіусі нашого хітбокса (25 стадів)
+				if char and isTargetInRange(25) then
 					local tool = char:FindFirstChildOfClass("Tool")
 					if tool then
-						pcall(function()
-							tool:Activate()
-						end)
+						pcall(function() tool:Activate() end)
 					end
 					pcall(function()
 						local cam = workspace.CurrentCamera
 						if cam then
 							VirtualUser:CaptureController()
-							-- Клікаємо по центру екрана, щоб уникнути конфліктів з UI та не блокувати атаки
 							VirtualUser:ClickButton1(Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2))
 						end
 					end)
@@ -266,6 +295,24 @@ local function toggleAutoAttack(state)
 		end
 	end
 end
+
+fastAttackBtn.MouseButton1Click:Connect(function()
+	fastAttackActiveUI = not fastAttackActiveUI
+	if fastAttackActiveUI then
+		fastAttackBtn.Text = "FastAttack ON"
+		fastAttackBtn.TextColor3 = GREEN
+		fastAttackBtn.BorderColor3 = GREEN
+		toggleAutoAttack(true)
+	else
+		fastAttackBtn.Text = "FastAttack"
+		fastAttackBtn.TextColor3 = PURPLE_TEXT
+		fastAttackBtn.BorderColor3 = PURPLE_BORDER
+		-- Вимикаємо тільки якщо і MobFarm вимкнений, щоб не конфліктували
+		if not mobFarmActive then
+			toggleAutoAttack(false)
+		end
+	end
+end)
 
 local function equipWeapon()
 	if not Player.Character then return end
@@ -357,7 +404,7 @@ chestFarmBtn.MouseButton1Click:Connect(function()
 		mobFarmBtn.Text = "Mob Farm"
 		mobFarmBtn.TextColor3 = PURPLE_TEXT
 		mobFarmBtn.BorderColor3 = PURPLE_BORDER
-		toggleAutoAttack(false)
+		if not fastAttackActiveUI then toggleAutoAttack(false) end
 		
 		chestFarmBtn.Text = "Chest Farm ON"
 		chestFarmBtn.TextColor3 = GREEN
@@ -551,7 +598,9 @@ mobFarmBtn.MouseButton1Click:Connect(function()
 		mobFarmBtn.BorderColor3 = PURPLE_BORDER
 		
 		toggleNoclip(false)
-		toggleAutoAttack(false)
+		if not fastAttackActiveUI then
+			toggleAutoAttack(false)
+		end
 		stopFlying()
 	end
 end)
@@ -560,7 +609,7 @@ end)
 -- HITBOX ACCURATE LOGIC (FIXED)
 -- ==========================================
 local hitboxActive = false
-local HITBOX_SIZE = Vector3.new(30, 30, 30) -- Трохи збільшили розмір хітбокса для кращого попадання
+local HITBOX_SIZE = Vector3.new(30, 30, 30)
 local DEFAULT_SIZE = Vector3.new(2, 2, 1)
 
 local function modifyHitbox(targetChar, expand)
@@ -571,7 +620,6 @@ local function modifyHitbox(targetChar, expand)
 	
 	if hrp and hum and hum.Health > 0 then
 		if expand then
-			-- Запобігаємо нескінченному оновленню властивостей, що збивало автоатаку
 			if hrp.Size ~= HITBOX_SIZE then
 				hrp.Size = HITBOX_SIZE
 				hrp.Transparency = 0.8
