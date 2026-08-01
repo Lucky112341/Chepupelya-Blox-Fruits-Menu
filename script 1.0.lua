@@ -1,10 +1,14 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualUser = game:GetService("VirtualUser")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
--- Color theme
+-- ==========================================
+-- COLOR THEME & SETTINGS
+-- ==========================================
 local PURPLE_BORDER = Color3.fromRGB(157, 0, 255)
 local PURPLE_TEXT = Color3.fromRGB(153, 0, 255)
 local GREEN = Color3.fromRGB(0, 255, 0)
@@ -15,6 +19,9 @@ local ANIM_DURATION = 0.25
 local ANIM_EASE = Enum.EasingStyle.Quad
 local ANIM_DIRECTION = Enum.EasingDirection.Out
 
+-- ==========================================
+-- UI CREATION
+-- ==========================================
 -- Create ScreenGui
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ChepupelyaMenu"
@@ -105,7 +112,9 @@ local godModeBtn = createFeatureButton("GodMode", "God Water", 0.6241)
 local hitboxBtn = createFeatureButton("HitboxAccurate", "Hitbox Accurate", 0.7299)
 local fastAttackBtn = createFeatureButton("FastAttack", "FastAttack", 0.8357)
 
--- Tween all transparencies
+-- ==========================================
+-- UI ANIMATIONS
+-- ==========================================
 local function getFadeTargets()
 	local targets = {mainFrame}
 	for _, child in mainFrame:GetDescendants() do
@@ -119,7 +128,6 @@ end
 local function tweenTransparency(targets, goalBg, goalText, goalBorder, callback)
 	local info = TweenInfo.new(ANIM_DURATION, ANIM_EASE, ANIM_DIRECTION)
 	local playing = 0
-
 	for _, obj in targets do
 		if obj:IsA("Frame") or obj:IsA("TextLabel") or obj:IsA("TextButton") then
 			local goals = {BackgroundTransparency = goalBg}
@@ -135,25 +143,19 @@ local function tweenTransparency(targets, goalBg, goalText, goalBorder, callback
 			tween:Play()
 			tween.Completed:Connect(function()
 				playing = playing - 1
-				if playing == 0 and callback then
-					callback()
-				end
+				if playing == 0 and callback then callback() end
 			end)
 		end
 	end
 end
 
--- Toggle GUI logic
 local menuOpen = true
 local isAnimating = false
-
 toggleBtn.MouseButton1Click:Connect(function()
 	if isAnimating then return end
 	isAnimating = true
 	menuOpen = not menuOpen
-
 	local targets = getFadeTargets()
-
 	if menuOpen then
 		for _, obj in targets do
 			if obj:IsA("Frame") or obj:IsA("TextLabel") or obj:IsA("TextButton") then
@@ -166,9 +168,7 @@ toggleBtn.MouseButton1Click:Connect(function()
 			end
 		end
 		mainFrame.Visible = true
-		tweenTransparency(targets, 0, 0, true, function()
-			isAnimating = false
-		end)
+		tweenTransparency(targets, 0, 0, true, function() isAnimating = false end)
 	else
 		tweenTransparency(targets, 1, 1, false, function()
 			mainFrame.Visible = false
@@ -179,24 +179,23 @@ end)
 
 
 -- ==========================================
--- CHEST FARM LOGIC (PERFECTED FOR BLOX FRUITS)
+-- CORE FUNCTIONS (NOCLIP & FLY)
 -- ==========================================
-
-local chestFarmActive = false
 local noclipConnection = nil
 
--- Noclip
 local function toggleNoclip(state)
 	if state then
-		noclipConnection = RunService.Stepped:Connect(function()
-			if Player.Character then
-				for _, v in pairs(Player.Character:GetDescendants()) do
-					if v:IsA("BasePart") and v.CanCollide then
-						v.CanCollide = false
+		if not noclipConnection then
+			noclipConnection = RunService.Stepped:Connect(function()
+				if Player.Character then
+					for _, v in pairs(Player.Character:GetDescendants()) do
+						if v:IsA("BasePart") and v.CanCollide then
+							v.CanCollide = false
+						end
 					end
 				end
-			end
-		end)
+			end)
+		end
 	else
 		if noclipConnection then
 			noclipConnection:Disconnect()
@@ -205,66 +204,80 @@ local function toggleNoclip(state)
 	end
 end
 
--- Функція для перевірки, чи є об'єкт скринею у Blox Fruits
+local function flyTo(targetCFrame, speed, conditionFunc)
+	local char = Player.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+	local hrp = char.HumanoidRootPart
+
+	local antiGravity = hrp:FindFirstChild("FarmAntiGravity")
+	if not antiGravity then
+		antiGravity = Instance.new("BodyVelocity")
+		antiGravity.Name = "FarmAntiGravity"
+		antiGravity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+		antiGravity.Velocity = Vector3.new(0, 0, 0)
+		antiGravity.Parent = hrp
+	end
+
+	while conditionFunc() and (hrp.Position - targetCFrame.Position).Magnitude > 3 do
+		local dt = RunService.Heartbeat:Wait()
+		if not char:FindFirstChild("HumanoidRootPart") then break end
+		
+		local direction = (targetCFrame.Position - hrp.Position).Unit
+		local step = direction * (speed * dt)
+
+		if (hrp.Position - targetCFrame.Position).Magnitude < step.Magnitude then
+			hrp.CFrame = targetCFrame
+			break
+		else
+			hrp.CFrame = CFrame.lookAt(hrp.Position + step, targetCFrame.Position)
+		end
+	end
+end
+
+local function stopFlying()
+	if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+		local bv = Player.Character.HumanoidRootPart:FindFirstChild("FarmAntiGravity")
+		if bv then bv:Destroy() end
+	end
+end
+
+
+-- ==========================================
+-- CHEST FARM LOGIC
+-- ==========================================
+local chestFarmActive = false
+
 local function isChest(obj)
-	-- Blox Fruits використовує назви на кшталт "Chest1", "Chest2", "Chest3" тощо.
-	-- Іноді вони лежать у workspace.Map або інших папках.
 	if obj:IsA("Model") or obj:IsA("Part") then
-		local name = string.lower(obj.Name)
-		-- Перевіряємо, чи містить назва "chest"
-		if string.find(name, "chest") then
-			-- Додаткова перевірка: якщо це модель, чи є всередині TouchInterest
-			-- (саме через TouchInterest гравець збирає скриню)
-			local hasTouchInterest = false
+		if string.find(string.lower(obj.Name), "chest") then
 			for _, child in pairs(obj:GetDescendants()) do
-				if child:IsA("TouchTransmitter") then
-					hasTouchInterest = true
-					break
-				end
+				if child:IsA("TouchTransmitter") then return true end
 			end
-			return hasTouchInterest
 		end
 	end
 	return false
 end
 
--- Основний цикл ферми
 local function startChestFarm()
 	task.spawn(function()
-		local antiGravity = Instance.new("BodyVelocity")
-		antiGravity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-		antiGravity.Velocity = Vector3.new(0, 0, 0)
-
 		while chestFarmActive do
 			task.wait()
 			local char = Player.Character
-			if not char then continue end
-			local hrp = char:FindFirstChild("HumanoidRootPart")
-			if not hrp then continue end
+			if not char or not char:FindFirstChild("HumanoidRootPart") then continue end
+			local hrp = char.HumanoidRootPart
 
-			-- Пошук найближчої скрині серед УСІХ об'єктів у workspace
-			local nearestChest = nil
+			local nearestChest, targetPartToTouch = nil, nil
 			local shortestDistance = math.huge
-			local targetPartToTouch = nil
 
-			-- Перебираємо всіх нащадків workspace, щоб знайти скрині навіть у папках
 			for _, obj in pairs(workspace:GetDescendants()) do
 				if isChest(obj) then
-					-- Знаходимо частину (Part), до якої треба доторкнутися
-					local touchPart = nil
-					if obj:IsA("BasePart") and obj:FindFirstChildWhichIsA("TouchTransmitter") then
-						touchPart = obj
-					elseif obj:IsA("Model") then
-						-- Шукаємо BasePart всередині моделі, що має TouchTransmitter
+					local touchPart = obj:IsA("BasePart") and obj:FindFirstChildWhichIsA("TouchTransmitter") and obj or nil
+					if not touchPart then
 						for _, child in pairs(obj:GetDescendants()) do
 							if child:IsA("BasePart") and child:FindFirstChildWhichIsA("TouchTransmitter") then
 								touchPart = child
 								break
 							end
-						end
-						-- Якщо не знайшли з TouchTransmitter, беремо PrimaryPart
-						if not touchPart then
-							touchPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
 						end
 					end
 
@@ -279,26 +292,11 @@ local function startChestFarm()
 				end
 			end
 
-			-- Якщо знайшли скриню
 			if nearestChest and targetPartToTouch then
-				antiGravity.Parent = hrp
-				local speed = 300
+				flyTo(targetPartToTouch.CFrame, 300, function() 
+					return chestFarmActive and nearestChest.Parent ~= nil
+				end)
 
-				-- Летимо до скрині
-				while chestFarmActive and nearestChest.Parent and (hrp.Position - targetPartToTouch.Position).Magnitude > 3 do
-					local dt = RunService.Heartbeat:Wait()
-					local direction = (targetPartToTouch.Position - hrp.Position).Unit
-					local step = direction * (speed * dt)
-
-					if (hrp.Position - targetPartToTouch.Position).Magnitude < step.Magnitude then
-						hrp.CFrame = targetPartToTouch.CFrame
-						break
-					else
-						hrp.CFrame = hrp.CFrame + step
-					end
-				end
-
-				-- Збір скрині
 				if chestFarmActive and nearestChest.Parent and (hrp.Position - targetPartToTouch.Position).Magnitude <= 10 then
 					if firetouchinterest then
 						firetouchinterest(hrp, targetPartToTouch, 0)
@@ -307,32 +305,25 @@ local function startChestFarm()
 					else
 						hrp.CFrame = targetPartToTouch.CFrame
 					end
-					
-					-- Чекаємо, поки скриня зникне, або максимум 1 секунду
-					local waitTime = 0
-					while nearestChest.Parent and waitTime < 1 do
-						task.wait(0.1)
-						waitTime = waitTime + 0.1
-					end
+					task.wait(0.5)
 				end
 			else
-				-- Якщо скринь немає (всі зібрані) - чекаємо
-				antiGravity.Parent = nil
+				stopFlying()
 				task.wait(1)
 			end
 		end
-
-		if antiGravity then
-			antiGravity:Destroy()
-		end
+		stopFlying()
 	end)
 end
 
--- Обробка натискання кнопки
 chestFarmBtn.MouseButton1Click:Connect(function()
 	chestFarmActive = not chestFarmActive
-	
 	if chestFarmActive then
+		mobFarmActive = false 
+		mobFarmBtn.Text = "Mob Farm"
+		mobFarmBtn.TextColor3 = PURPLE_TEXT
+		mobFarmBtn.BorderColor3 = PURPLE_BORDER
+		
 		chestFarmBtn.Text = "Chest Farm ON"
 		chestFarmBtn.TextColor3 = GREEN
 		chestFarmBtn.BorderColor3 = GREEN
@@ -343,10 +334,247 @@ chestFarmBtn.MouseButton1Click:Connect(function()
 		chestFarmBtn.TextColor3 = PURPLE_TEXT
 		chestFarmBtn.BorderColor3 = PURPLE_BORDER
 		toggleNoclip(false)
-		
-		if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
-			local bv = Player.Character.HumanoidRootPart:FindFirstChildWhichIsA("BodyVelocity")
-			if bv then bv:Destroy() end
+		stopFlying()
+	end
+end)
+
+
+-- ==========================================
+-- MOB FARM LOGIC
+-- ==========================================
+mobFarmActive = false
+
+-- 3rd Sea Quests (1500 - 2800)
+local QuestList = {
+	{LevelReq = 1500, MaxLevel = 1524, NPCName = "Pirate Port Quest Giver", QuestId = "PiratePortQuest", QuestNum = 1},
+	{LevelReq = 1525, MaxLevel = 1574, NPCName = "Pirate Port Quest Giver", QuestId = "PiratePortQuest", QuestNum = 2},
+	{LevelReq = 1575, MaxLevel = 1599, NPCName = "Amazon Quest Giver", QuestId = "AmazonQuest", QuestNum = 1},
+	{LevelReq = 1600, MaxLevel = 1624, NPCName = "Amazon Quest Giver", QuestId = "AmazonQuest", QuestNum = 2},
+	{LevelReq = 1625, MaxLevel = 1649, NPCName = "Amazon Quest Giver 2", QuestId = "AmazonQuest2", QuestNum = 1},
+	{LevelReq = 1650, MaxLevel = 1699, NPCName = "Amazon Quest Giver 2", QuestId = "AmazonQuest2", QuestNum = 2},
+	{LevelReq = 1700, MaxLevel = 1724, NPCName = "Marine Tree Island Quest Giver", QuestId = "MarineTreeIsland", QuestNum = 1},
+	{LevelReq = 1725, MaxLevel = 1774, NPCName = "Marine Tree Island Quest Giver", QuestId = "MarineTreeIsland", QuestNum = 2},
+	{LevelReq = 1775, MaxLevel = 1799, NPCName = "Deep Forest Island Quest Giver", QuestId = "DeepForestIsland", QuestNum = 1},
+	{LevelReq = 1800, MaxLevel = 1849, NPCName = "Deep Forest Island Quest Giver", QuestId = "DeepForestIsland", QuestNum = 2},
+	{LevelReq = 1850, MaxLevel = 1899, NPCName = "Deep Forest Island Quest Giver 2", QuestId = "DeepForestIsland2", QuestNum = 1},
+	{LevelReq = 1900, MaxLevel = 1974, NPCName = "Deep Forest Island Quest Giver 2", QuestId = "DeepForestIsland2", QuestNum = 2},
+	{LevelReq = 1975, MaxLevel = 1999, NPCName = "Deep Forest Island Quest Giver 3", QuestId = "DeepForestIsland3", QuestNum = 1},
+	{LevelReq = 2000, MaxLevel = 2074, NPCName = "Deep Forest Island Quest Giver 3", QuestId = "DeepForestIsland3", QuestNum = 2},
+	{LevelReq = 2075, MaxLevel = 2099, NPCName = "Haunted Quest Giver 1", QuestId = "HauntedQuest1", QuestNum = 1},
+	{LevelReq = 2100, MaxLevel = 2124, NPCName = "Haunted Quest Giver 1", QuestId = "HauntedQuest1", QuestNum = 2},
+	{LevelReq = 2125, MaxLevel = 2149, NPCName = "Haunted Quest Giver 2", QuestId = "HauntedQuest2", QuestNum = 1},
+	{LevelReq = 2150, MaxLevel = 2199, NPCName = "Haunted Quest Giver 2", QuestId = "HauntedQuest2", QuestNum = 2},
+	{LevelReq = 2200, MaxLevel = 2224, NPCName = "Peanut Island Quest Giver", QuestId = "NutsIslandQuest", QuestNum = 1},
+	{LevelReq = 2225, MaxLevel = 2274, NPCName = "Peanut Island Quest Giver", QuestId = "NutsIslandQuest", QuestNum = 2},
+	{LevelReq = 2275, MaxLevel = 2299, NPCName = "Ice Cream Island Quest Giver", QuestId = "IceCreamIslandQuest", QuestNum = 1},
+	{LevelReq = 2300, MaxLevel = 2349, NPCName = "Ice Cream Island Quest Giver", QuestId = "IceCreamIslandQuest", QuestNum = 2},
+	{LevelReq = 2350, MaxLevel = 2374, NPCName = "Cake Quest Giver 1", QuestId = "CakeQuest1", QuestNum = 1},
+	{LevelReq = 2375, MaxLevel = 2399, NPCName = "Cake Quest Giver 1", QuestId = "CakeQuest1", QuestNum = 2},
+	{LevelReq = 2400, MaxLevel = 2424, NPCName = "Cake Quest Giver 2", QuestId = "CakeQuest2", QuestNum = 1},
+	{LevelReq = 2425, MaxLevel = 2449, NPCName = "Cake Quest Giver 2", QuestId = "CakeQuest2", QuestNum = 2},
+	{LevelReq = 2450, MaxLevel = 2474, NPCName = "Choc Quest Giver 1", QuestId = "ChocQuest1", QuestNum = 1},
+	{LevelReq = 2475, MaxLevel = 2499, NPCName = "Choc Quest Giver 1", QuestId = "ChocQuest1", QuestNum = 2},
+	{LevelReq = 2500, MaxLevel = 2524, NPCName = "Choc Quest Giver 2", QuestId = "ChocQuest2", QuestNum = 1},
+	{LevelReq = 2525, MaxLevel = 2549, NPCName = "Choc Quest Giver 2", QuestId = "ChocQuest2", QuestNum = 2},
+	{LevelReq = 2550, MaxLevel = 2574, NPCName = "Tiki Quest Giver 1", QuestId = "TikiIslandQuest1", QuestNum = 1},
+	{LevelReq = 2575, MaxLevel = 2599, NPCName = "Tiki Quest Giver 1", QuestId = "TikiIslandQuest1", QuestNum = 2},
+	{LevelReq = 2600, MaxLevel = 2800, NPCName = "Tiki Quest Giver 2", QuestId = "TikiIslandQuest2", QuestNum = 1},
+}
+
+local function getQuestDataForLevel(playerLevel)
+	local bestQuest = QuestList[1]
+	for _, quest in ipairs(QuestList) do
+		if playerLevel >= quest.LevelReq and playerLevel <= quest.MaxLevel then
+			bestQuest = quest
 		end
+	end
+	return bestQuest
+end
+
+local function equipWeapon()
+	if not Player.Character then return end
+	local hasTool = Player.Character:FindFirstChildOfClass("Tool")
+	if not hasTool then
+		for _, tool in pairs(Player.Backpack:GetChildren()) do
+			if tool:IsA("Tool") and (tool.ToolTip == "Melee" or tool.ToolTip == "Sword") then
+				Player.Character.Humanoid:EquipTool(tool)
+				break
+			end
+		end
+	end
+end
+
+local function autoAttack()
+	VirtualUser:CaptureController()
+	VirtualUser:ClickButton1(Vector2.new())
+	
+	local tool = Player.Character and Player.Character:FindFirstChildOfClass("Tool")
+	if tool then
+		tool:Activate()
+	end
+end
+
+local function startMobFarm()
+	task.spawn(function()
+		while mobFarmActive do
+			task.wait()
+			local char = Player.Character
+			if not char or not char:FindFirstChild("HumanoidRootPart") then continue end
+			
+			local playerLevel = Player.Data.Level.Value
+			local questGui = PlayerGui.Main:FindFirstChild("Quest")
+			
+			if not questGui or not questGui.Visible then
+				local targetQuest = getQuestDataForLevel(playerLevel)
+				local npc = workspace.NPCs:FindFirstChild(targetQuest.NPCName)
+				
+				if npc and npc:FindFirstChild("HumanoidRootPart") then
+					flyTo(npc.HumanoidRootPart.CFrame, 300, function()
+						return mobFarmActive and (not questGui or not questGui.Visible)
+					end)
+					
+					if (char.HumanoidRootPart.Position - npc.HumanoidRootPart.Position).Magnitude <= 10 then
+						ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", targetQuest.QuestId, targetQuest.QuestNum)
+						task.wait(1)
+					end
+				end
+			else
+				local questTitle = questGui.Container.QuestTitle.Title.Text
+				local targetEnemy = nil
+				local shortestDist = math.huge
+				
+				for _, enemy in pairs(workspace.Enemies:GetChildren()) do
+					if enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 and enemy:FindFirstChild("HumanoidRootPart") then
+						if string.find(string.lower(questTitle), string.lower(enemy.Name)) then
+							local dist = (char.HumanoidRootPart.Position - enemy.HumanoidRootPart.Position).Magnitude
+							if dist < shortestDist then
+								shortestDist = dist
+								targetEnemy = enemy
+							end
+						end
+					end
+				end
+				
+				if targetEnemy then
+					local farmCFrame = targetEnemy.HumanoidRootPart.CFrame * CFrame.new(0, 7, 0)
+					
+					flyTo(farmCFrame, 300, function()
+						return mobFarmActive and targetEnemy and targetEnemy:FindFirstChild("Humanoid") and targetEnemy.Humanoid.Health > 0
+					end)
+					
+					if targetEnemy and targetEnemy:FindFirstChild("Humanoid") and targetEnemy.Humanoid.Health > 0 then
+						equipWeapon()
+						char.HumanoidRootPart.CFrame = farmCFrame * CFrame.Angles(-math.rad(90), 0, 0)
+						autoAttack()
+					end
+				else
+					stopFlying()
+					task.wait(1)
+				end
+			end
+		end
+		stopFlying()
+	end)
+end
+
+mobFarmBtn.MouseButton1Click:Connect(function()
+	mobFarmActive = not mobFarmActive
+	if mobFarmActive then
+		chestFarmActive = false 
+		chestFarmBtn.Text = "Chest Farm"
+		chestFarmBtn.TextColor3 = PURPLE_TEXT
+		chestFarmBtn.BorderColor3 = PURPLE_BORDER
+		
+		mobFarmBtn.Text = "Mob Farm ON"
+		mobFarmBtn.TextColor3 = GREEN
+		mobFarmBtn.BorderColor3 = GREEN
+		toggleNoclip(true)
+		startMobFarm()
+	else
+		mobFarmBtn.Text = "Mob Farm"
+		mobFarmBtn.TextColor3 = PURPLE_TEXT
+		mobFarmBtn.BorderColor3 = PURPLE_BORDER
+		toggleNoclip(false)
+		stopFlying()
+	end
+end)
+
+-- ==========================================
+-- HITBOX ACCURATE LOGIC
+-- ==========================================
+local hitboxActive = false
+local HITBOX_SIZE = Vector3.new(50, 50, 50)
+local DEFAULT_SIZE = Vector3.new(2, 2, 1)
+
+local function modifyHitbox(targetChar, expand)
+	if not targetChar or targetChar == Player.Character then return end
+	
+	local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+	local hum = targetChar:FindFirstChild("Humanoid")
+	
+	if hrp and hum and hum.Health > 0 then
+		if expand then
+			hrp.Size = HITBOX_SIZE
+			hrp.Transparency = 0.8
+			hrp.BrickColor = BrickColor.new("Bright purple")
+			hrp.Material = Enum.Material.Neon
+			hrp.CanCollide = false
+		else
+			hrp.Size = DEFAULT_SIZE
+			hrp.Transparency = 1
+			hrp.CanCollide = false
+		end
+	end
+end
+
+local function startHitboxLoop()
+	task.spawn(function()
+		while hitboxActive do
+			local char = Player.Character
+			local hasWeapon = char and char:FindFirstChildOfClass("Tool") ~= nil
+			
+			-- Застосовуємо до мобів (Blox Fruits зберігає їх у workspace.Enemies)
+			if workspace:FindFirstChild("Enemies") then
+				for _, enemy in pairs(workspace.Enemies:GetChildren()) do
+					modifyHitbox(enemy, hasWeapon)
+				end
+			end
+			
+			-- Застосовуємо до гравців (Blox Fruits зберігає їх у workspace.Characters)
+			if workspace:FindFirstChild("Characters") then
+				for _, playerChar in pairs(workspace.Characters:GetChildren()) do
+					modifyHitbox(playerChar, hasWeapon)
+				end
+			end
+			
+			task.wait(0.5)
+		end
+		
+		-- Скидання хітбоксів при вимкненні функції
+		if workspace:FindFirstChild("Enemies") then
+			for _, enemy in pairs(workspace.Enemies:GetChildren()) do
+				modifyHitbox(enemy, false)
+			end
+		end
+		if workspace:FindFirstChild("Characters") then
+			for _, playerChar in pairs(workspace.Characters:GetChildren()) do
+				modifyHitbox(playerChar, false)
+			end
+		end
+	end)
+end
+
+hitboxBtn.MouseButton1Click:Connect(function()
+	hitboxActive = not hitboxActive
+	
+	if hitboxActive then
+		hitboxBtn.Text = "Hitbox Accurate ON"
+		hitboxBtn.TextColor3 = GREEN
+		hitboxBtn.BorderColor3 = GREEN
+		startHitboxLoop()
+	else
+		hitboxBtn.Text = "Hitbox Accurate"
+		hitboxBtn.TextColor3 = PURPLE_TEXT
+		hitboxBtn.BorderColor3 = PURPLE_BORDER
 	end
 end)
