@@ -14,7 +14,6 @@ local PURPLE_TEXT = Color3.fromRGB(153, 0, 255)
 local GREEN = Color3.fromRGB(0, 255, 0)
 local BLACK = Color3.new(0, 0, 0)
 local FONT = Font.new("rbxasset://fonts/families/Michroma.json", Enum.FontWeight.Bold, Enum.FontStyle.Italic)
-
 local ANIM_DURATION = 0.25
 local ANIM_EASE = Enum.EasingStyle.Quad
 local ANIM_DIRECTION = Enum.EasingDirection.Out
@@ -196,7 +195,8 @@ local function toggleNoclip(state)
 	end
 end
 
-local function flyTo(targetCFrame, speed, conditionFunc)
+local function flyTo(targetCFrame, speed, conditionFunc, stopDistance)
+	stopDistance = stopDistance or 3
 	local char = Player.Character
 	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 	local hrp = char.HumanoidRootPart
@@ -210,15 +210,14 @@ local function flyTo(targetCFrame, speed, conditionFunc)
 		antiGravity.Parent = hrp
 	end
 
-	while conditionFunc() and (hrp.Position - targetCFrame.Position).Magnitude > 3 do
+	while conditionFunc() and (hrp.Position - targetCFrame.Position).Magnitude > stopDistance do
 		local dt = RunService.Heartbeat:Wait()
 		if not char:FindFirstChild("HumanoidRootPart") then break end
 		
 		local direction = (targetCFrame.Position - hrp.Position).Unit
 		local step = direction * (speed * dt)
 
-		if (hrp.Position - targetCFrame.Position).Magnitude < step.Magnitude then
-			hrp.CFrame = targetCFrame
+		if (hrp.Position - targetCFrame.Position).Magnitude <= stopDistance then
 			break
 		else
 			hrp.CFrame = CFrame.lookAt(hrp.Position + step, targetCFrame.Position)
@@ -234,21 +233,29 @@ local function stopFlying()
 end
 
 -- ==========================================
--- FAST AUTO ATTACK
+-- FIXED FAST AUTO ATTACK (SPAM)
 -- ==========================================
 local autoAttackConnection = nil
 local function toggleAutoAttack(state)
 	if state then
 		if not autoAttackConnection then
-			autoAttackConnection = RunService.RenderStepped:Connect(function()
+			autoAttackConnection = RunService.Heartbeat:Connect(function()
 				local char = Player.Character
 				if char then
 					local tool = char:FindFirstChildOfClass("Tool")
 					if tool then
-						tool:Activate()
+						pcall(function()
+							tool:Activate()
+						end)
 					end
-					VirtualUser:CaptureController()
-					VirtualUser:ClickButton1(Vector2.new())
+					pcall(function()
+						local cam = workspace.CurrentCamera
+						if cam then
+							VirtualUser:CaptureController()
+							-- Клікаємо по центру екрана, щоб уникнути конфліктів з UI та не блокувати атаки
+							VirtualUser:ClickButton1(Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2))
+						end
+					end)
 				end
 			end)
 		end
@@ -323,7 +330,7 @@ local function startChestFarm()
 			if nearestChest and targetPartToTouch then
 				flyTo(targetPartToTouch.CFrame, 300, function() 
 					return chestFarmActive and nearestChest.Parent ~= nil
-				end)
+				end, 3)
 				if chestFarmActive and nearestChest.Parent and (hrp.Position - targetPartToTouch.Position).Magnitude <= 10 then
 					if firetouchinterest then
 						firetouchinterest(hrp, targetPartToTouch, 0)
@@ -370,12 +377,39 @@ end)
 -- MOB FARM LOGIC (FULLY FIXED)
 -- ==========================================
 mobFarmActive = false
-
 local QuestList = {
 	{LevelReq = 1500, MaxLevel = 1524, NPCName = "Pirate Port Quest Giver", QuestId = "PiratePortQuest", QuestNum = 1},
 	{LevelReq = 1525, MaxLevel = 1574, NPCName = "Pirate Port Quest Giver", QuestId = "PiratePortQuest", QuestNum = 2},
 	{LevelReq = 1575, MaxLevel = 1599, NPCName = "Amazon Quest Giver", QuestId = "AmazonQuest", QuestNum = 1},
-	-- ... (Інші квести 3 моря. Якщо не знайде NPC - скрипт просто полетить бити мобів)
+	{LevelReq = 1600, MaxLevel = 1624, NPCName = "Amazon Quest Giver", QuestId = "AmazonQuest", QuestNum = 2},
+	{LevelReq = 1625, MaxLevel = 1649, NPCName = "Amazon Quest Giver 2", QuestId = "AmazonQuest2", QuestNum = 1},
+	{LevelReq = 1650, MaxLevel = 1699, NPCName = "Amazon Quest Giver 2", QuestId = "AmazonQuest2", QuestNum = 2},
+	{LevelReq = 1700, MaxLevel = 1724, NPCName = "Marine Tree Island Quest Giver", QuestId = "MarineTreeIsland", QuestNum = 1},
+	{LevelReq = 1725, MaxLevel = 1774, NPCName = "Marine Tree Island Quest Giver", QuestId = "MarineTreeIsland", QuestNum = 2},
+	{LevelReq = 1775, MaxLevel = 1799, NPCName = "Deep Forest Island Quest Giver", QuestId = "DeepForestIsland", QuestNum = 1},
+	{LevelReq = 1800, MaxLevel = 1849, NPCName = "Deep Forest Island Quest Giver", QuestId = "DeepForestIsland", QuestNum = 2},
+	{LevelReq = 1850, MaxLevel = 1899, NPCName = "Deep Forest Island Quest Giver 2", QuestId = "DeepForestIsland2", QuestNum = 1},
+	{LevelReq = 1900, MaxLevel = 1974, NPCName = "Deep Forest Island Quest Giver 2", QuestId = "DeepForestIsland2", QuestNum = 2},
+	{LevelReq = 1975, MaxLevel = 1999, NPCName = "Deep Forest Island Quest Giver 3", QuestId = "DeepForestIsland3", QuestNum = 1},
+	{LevelReq = 2000, MaxLevel = 2074, NPCName = "Deep Forest Island Quest Giver 3", QuestId = "DeepForestIsland3", QuestNum = 2},
+	{LevelReq = 2075, MaxLevel = 2099, NPCName = "Haunted Quest Giver 1", QuestId = "HauntedQuest1", QuestNum = 1},
+	{LevelReq = 2100, MaxLevel = 2124, NPCName = "Haunted Quest Giver 1", QuestId = "HauntedQuest1", QuestNum = 2},
+	{LevelReq = 2125, MaxLevel = 2149, NPCName = "Haunted Quest Giver 2", QuestId = "HauntedQuest2", QuestNum = 1},
+	{LevelReq = 2150, MaxLevel = 2199, NPCName = "Haunted Quest Giver 2", QuestId = "HauntedQuest2", QuestNum = 2},
+	{LevelReq = 2200, MaxLevel = 2224, NPCName = "Peanut Island Quest Giver", QuestId = "NutsIslandQuest", QuestNum = 1},
+	{LevelReq = 2225, MaxLevel = 2274, NPCName = "Peanut Island Quest Giver", QuestId = "NutsIslandQuest", QuestNum = 2},
+	{LevelReq = 2275, MaxLevel = 2299, NPCName = "Ice Cream Island Quest Giver", QuestId = "IceCreamIslandQuest", QuestNum = 1},
+	{LevelReq = 2300, MaxLevel = 2349, NPCName = "Ice Cream Island Quest Giver", QuestId = "IceCreamIslandQuest", QuestNum = 2},
+	{LevelReq = 2350, MaxLevel = 2374, NPCName = "Cake Quest Giver 1", QuestId = "CakeQuest1", QuestNum = 1},
+	{LevelReq = 2375, MaxLevel = 2399, NPCName = "Cake Quest Giver 1", QuestId = "CakeQuest1", QuestNum = 2},
+	{LevelReq = 2400, MaxLevel = 2424, NPCName = "Cake Quest Giver 2", QuestId = "CakeQuest2", QuestNum = 1},
+	{LevelReq = 2425, MaxLevel = 2449, NPCName = "Cake Quest Giver 2", QuestId = "CakeQuest2", QuestNum = 2},
+	{LevelReq = 2450, MaxLevel = 2474, NPCName = "Choc Quest Giver 1", QuestId = "ChocQuest1", QuestNum = 1},
+	{LevelReq = 2475, MaxLevel = 2499, NPCName = "Choc Quest Giver 1", QuestId = "ChocQuest1", QuestNum = 2},
+	{LevelReq = 2500, MaxLevel = 2524, NPCName = "Choc Quest Giver 2", QuestId = "ChocQuest2", QuestNum = 1},
+	{LevelReq = 2525, MaxLevel = 2549, NPCName = "Choc Quest Giver 2", QuestId = "ChocQuest2", QuestNum = 2},
+	{LevelReq = 2550, MaxLevel = 2574, NPCName = "Tiki Quest Giver 1", QuestId = "TikiIslandQuest1", QuestNum = 1},
+	{LevelReq = 2575, MaxLevel = 2599, NPCName = "Tiki Quest Giver 1", QuestId = "TikiIslandQuest1", QuestNum = 2},
 	{LevelReq = 2600, MaxLevel = 3000, NPCName = "Tiki Quest Giver 2", QuestId = "TikiIslandQuest2", QuestNum = 1},
 }
 
@@ -389,7 +423,6 @@ local function getQuestDataForLevel(playerLevel)
 	return bestQuest
 end
 
--- Функція пошуку будь-якого найближчого моба, якщо квест не працює
 local function getNearestEnemy()
 	local nearest = nil
 	local shortest = math.huge
@@ -417,7 +450,6 @@ local function startMobFarm()
 			local char = Player.Character
 			if not char or not char:FindFirstChild("HumanoidRootPart") then continue end
 			
-			-- Безпечно дістаємо рівень
 			local playerLevel = 1
 			if Player:FindFirstChild("Data") and Player.Data:FindFirstChild("Level") then
 				playerLevel = Player.Data.Level.Value
@@ -425,29 +457,28 @@ local function startMobFarm()
 
 			local questGui = PlayerGui.Main:FindFirstChild("Quest")
 			
-			-- Якщо квесту немає
 			if not questGui or not questGui.Visible then
 				local targetQuest = getQuestDataForLevel(playerLevel)
 				local npc = workspace.NPCs:FindFirstChild(targetQuest.NPCName)
 				
-				-- Якщо знайдено NPC - беремо квест
 				if npc and npc:FindFirstChild("HumanoidRootPart") then
 					flyTo(npc.HumanoidRootPart.CFrame, 300, function()
 						return mobFarmActive and (not questGui or not questGui.Visible)
-					end)
+					end, 15)
 					
-					if (char.HumanoidRootPart.Position - npc.HumanoidRootPart.Position).Magnitude <= 10 then
-						ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", targetQuest.QuestId, targetQuest.QuestNum)
-						task.wait(1)
+					if mobFarmActive and (not questGui or not questGui.Visible) then
+						pcall(function()
+							ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", targetQuest.QuestId, targetQuest.QuestNum)
+						end)
+						task.wait(1.5)
 					end
 				else
-					-- FALLBACK: Якщо NPC не знайдено (наприклад, ти в 1 морі), просто б'ємо мобів!
 					local targetEnemy = getNearestEnemy()
 					if targetEnemy then
 						local farmCFrame = targetEnemy.HumanoidRootPart.CFrame * CFrame.new(0, 8, 0)
 						flyTo(farmCFrame, 300, function()
 							return mobFarmActive and targetEnemy and targetEnemy:FindFirstChild("Humanoid") and targetEnemy.Humanoid.Health > 0
-						end)
+						end, 3)
 						if targetEnemy and targetEnemy:FindFirstChild("Humanoid") and targetEnemy.Humanoid.Health > 0 then
 							equipWeapon()
 							char.HumanoidRootPart.CFrame = farmCFrame * CFrame.Angles(-math.rad(80), 0, 0)
@@ -458,7 +489,6 @@ local function startMobFarm()
 					end
 				end
 			else
-				-- Якщо квест є, шукаємо потрібного моба
 				local success, questTitle = pcall(function() return string.lower(questGui.Container.QuestTitle.Title.Text) end)
 				if not success then continue end
 				
@@ -484,7 +514,7 @@ local function startMobFarm()
 					
 					flyTo(farmCFrame, 300, function()
 						return mobFarmActive and targetEnemy and targetEnemy:FindFirstChild("Humanoid") and targetEnemy.Humanoid.Health > 0
-					end)
+					end, 3)
 					
 					if targetEnemy and targetEnemy:FindFirstChild("Humanoid") and targetEnemy.Humanoid.Health > 0 then
 						equipWeapon()
@@ -527,10 +557,10 @@ mobFarmBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- HITBOX ACCURATE LOGIC
+-- HITBOX ACCURATE LOGIC (FIXED)
 -- ==========================================
 local hitboxActive = false
-local HITBOX_SIZE = Vector3.new(15, 15, 15) -- Оптимальний розмір, щоб удари не ламались
+local HITBOX_SIZE = Vector3.new(30, 30, 30) -- Трохи збільшили розмір хітбокса для кращого попадання
 local DEFAULT_SIZE = Vector3.new(2, 2, 1)
 
 local function modifyHitbox(targetChar, expand)
@@ -541,17 +571,22 @@ local function modifyHitbox(targetChar, expand)
 	
 	if hrp and hum and hum.Health > 0 then
 		if expand then
-			hrp.Size = HITBOX_SIZE
-			hrp.Transparency = 0.8
-			hrp.BrickColor = BrickColor.new("Bright purple")
-			hrp.Material = Enum.Material.Neon
-			hrp.CanCollide = false
-			hrp.Massless = true -- Критично важливо, щоб моди не ламались у просторі
+			-- Запобігаємо нескінченному оновленню властивостей, що збивало автоатаку
+			if hrp.Size ~= HITBOX_SIZE then
+				hrp.Size = HITBOX_SIZE
+				hrp.Transparency = 0.8
+				hrp.BrickColor = BrickColor.new("Bright purple")
+				hrp.Material = Enum.Material.Neon
+				hrp.CanCollide = false
+				hrp.Massless = true
+			end
 		else
-			hrp.Size = DEFAULT_SIZE
-			hrp.Transparency = 1
-			hrp.CanCollide = false
-			hrp.Massless = false
+			if hrp.Size ~= DEFAULT_SIZE then
+				hrp.Size = DEFAULT_SIZE
+				hrp.Transparency = 1
+				hrp.CanCollide = false
+				hrp.Massless = false
+			end
 		end
 	end
 end
