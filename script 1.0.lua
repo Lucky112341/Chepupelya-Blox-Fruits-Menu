@@ -18,7 +18,7 @@ local ANIM_DIRECTION = Enum.EasingDirection.Out
 -- Create ScreenGui
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ChepupelyaMenu"
-screenGui.ResetOnSpawn = true
+screenGui.ResetOnSpawn = false -- Краще false для екзекуторів, щоб не зникало після смерті
 screenGui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 screenGui.Parent = PlayerGui
 
@@ -34,7 +34,7 @@ mainFrame.BorderSizePixel = 2
 mainFrame.Visible = true
 mainFrame.Parent = screenGui
 
--- Toggle button (Close/Open)
+-- Toggle button
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Name = "Close/Open"
 toggleBtn.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -105,7 +105,7 @@ local godModeBtn = createFeatureButton("GodMode", "God Water", 0.6241)
 local hitboxBtn = createFeatureButton("HitboxAccurate", "Hitbox Accurate", 0.7299)
 local fastAttackBtn = createFeatureButton("FastAttack", "FastAttack", 0.8357)
 
--- Collect all fadeable GUI objects in MainFrame
+-- Tween all transparencies
 local function getFadeTargets()
 	local targets = {mainFrame}
 	for _, child in mainFrame:GetDescendants() do
@@ -116,7 +116,6 @@ local function getFadeTargets()
 	return targets
 end
 
--- Tween all transparencies
 local function tweenTransparency(targets, goalBg, goalText, goalBorder, callback)
 	local info = TweenInfo.new(ANIM_DURATION, ANIM_EASE, ANIM_DIRECTION)
 	local playing = 0
@@ -180,14 +179,13 @@ end)
 
 
 -- ==========================================
--- CHEST FARM LOGIC
+-- CHEST FARM LOGIC (FIXED FOR BLOX FRUITS)
 -- ==========================================
 
 local chestFarmActive = false
-local currentTween = nil
 local noclipConnection = nil
 
--- Функція для проходження крізь стіни під час магніту
+-- Noclip (проходження крізь стіни)
 local function toggleNoclip(state)
 	if state then
 		noclipConnection = RunService.Stepped:Connect(function()
@@ -207,19 +205,34 @@ local function toggleNoclip(state)
 	end
 end
 
--- Головний цикл ферми скринь
-task.spawn(function()
-	while task.wait(0.1) do
-		if chestFarmActive and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
-			local hrp = Player.Character.HumanoidRootPart
+-- Основний цикл ферми
+local function startChestFarm()
+	task.spawn(function()
+		-- Створюємо BodyVelocity, щоб персонаж не падав під час польоту (вбиваємо гравітацію)
+		local antiGravity = Instance.new("BodyVelocity")
+		antiGravity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+		antiGravity.Velocity = Vector3.new(0, 0, 0)
+
+		while chestFarmActive do
+			task.wait()
+			local char = Player.Character
+			if not char then continue end
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if not hrp then continue end
+
+			-- Пошук найближчої скрині
 			local nearestChest = nil
 			local shortestDistance = math.huge
 
-			-- Шукаємо найближчу скриню у світі
 			for _, obj in pairs(workspace:GetChildren()) do
 				if string.find(obj.Name, "Chest") then
-					local targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or (obj:IsA("BasePart") and obj or nil)
-					
+					local targetPart = nil
+					if obj:IsA("BasePart") then
+						targetPart = obj
+					elseif obj:IsA("Model") then
+						targetPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+					end
+
 					if targetPart then
 						local dist = (hrp.Position - targetPart.Position).Magnitude
 						if dist < shortestDistance then
@@ -230,57 +243,71 @@ task.spawn(function()
 				end
 			end
 
-			-- Якщо знайшли скриню, магнітимося до неї
+			-- Якщо знайшли скриню
 			if nearestChest then
-				local dist = (hrp.Position - nearestChest.Position).Magnitude
-				local speed = 300 -- Швидкість польоту (оптимально для БФ, щоб не кікало)
-				local timeToReach = dist / speed
+				antiGravity.Parent = hrp -- Вмикаємо левітацію
+				local speed = 300 -- Швидкість магніту
 
-				local tweenInfo = TweenInfo.new(timeToReach, Enum.EasingStyle.Linear)
-				currentTween = TweenService:Create(hrp, tweenInfo, {CFrame = nearestChest.CFrame})
-				currentTween:Play()
+				-- Летимо до скрині кадр за кадром (набагато стабільніше для експлойтів, ніж Tween)
+				while chestFarmActive and nearestChest.Parent and (hrp.Position - nearestChest.Position).Magnitude > 3 do
+					local dt = RunService.Heartbeat:Wait()
+					local direction = (nearestChest.Position - hrp.Position).Unit
+					local step = direction * (speed * dt)
 
-				-- Чекаємо, поки долетимо або скриня зникне
-				while chestFarmActive and nearestChest and nearestChest.Parent and (hrp.Position - nearestChest.Position).Magnitude > 5 do
-					task.wait(0.1)
+					-- Якщо наступний крок перелетить скриню, просто тепаємось в неї
+					if (hrp.Position - nearestChest.Position).Magnitude < step.Magnitude then
+						hrp.CFrame = nearestChest.CFrame
+						break
+					else
+						hrp.CFrame = hrp.CFrame + step
+					end
 				end
 
-				if currentTween then
-					currentTween:Cancel()
+				-- Збір скрині
+				if chestFarmActive and nearestChest.Parent and (hrp.Position - nearestChest.Position).Magnitude <= 10 then
+					if firetouchinterest then
+						firetouchinterest(hrp, nearestChest, 0)
+						task.wait(0.05)
+						firetouchinterest(hrp, nearestChest, 1)
+					else
+						-- Резервний варіант, якщо firetouchinterest дасть збій
+						hrp.CFrame = nearestChest.CFrame
+					end
+					task.wait(0.5) -- Даємо час серверу обробити збір і видалити скриню
 				end
-
-				-- Збираємо скриню (використовуємо функцію Delta)
-				if firetouchinterest and nearestChest.Parent then
-					firetouchinterest(hrp, nearestChest, 0)
-					task.wait(0.05)
-					firetouchinterest(hrp, nearestChest, 1)
-				end
+			else
+				antiGravity.Parent = nil -- Вимикаємо левітацію, якщо немає скринь
+				task.wait(1)
 			end
 		end
-	end
-end)
+
+		-- Очищення після вимкнення
+		if antiGravity then
+			antiGravity:Destroy()
+		end
+	end)
+end
 
 -- Обробка натискання кнопки
 chestFarmBtn.MouseButton1Click:Connect(function()
 	chestFarmActive = not chestFarmActive
 	
 	if chestFarmActive then
-		-- Вмикаємо
 		chestFarmBtn.Text = "Chest Farm ON"
 		chestFarmBtn.TextColor3 = GREEN
 		chestFarmBtn.BorderColor3 = GREEN
 		toggleNoclip(true)
+		startChestFarm()
 	else
-		-- Вимикаємо
 		chestFarmBtn.Text = "Chest Farm"
 		chestFarmBtn.TextColor3 = PURPLE_TEXT
 		chestFarmBtn.BorderColor3 = PURPLE_BORDER
 		toggleNoclip(false)
 		
-		-- Зупиняємо політ, якщо вимкнули під час руху
-		if currentTween then
-			currentTween:Cancel()
-			currentTween = nil
+		-- Додаткове очищення, якщо гравець вимкнув функцію під час польоту
+		if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+			local bv = Player.Character.HumanoidRootPart:FindFirstChildWhichIsA("BodyVelocity")
+			if bv then bv:Destroy() end
 		end
 	end
 end)
