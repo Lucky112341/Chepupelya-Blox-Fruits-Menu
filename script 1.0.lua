@@ -18,7 +18,7 @@ local ANIM_DIRECTION = Enum.EasingDirection.Out
 -- Create ScreenGui
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ChepupelyaMenu"
-screenGui.ResetOnSpawn = false -- Краще false для екзекуторів, щоб не зникало після смерті
+screenGui.ResetOnSpawn = false 
 screenGui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 screenGui.Parent = PlayerGui
 
@@ -179,13 +179,13 @@ end)
 
 
 -- ==========================================
--- CHEST FARM LOGIC (FIXED FOR BLOX FRUITS)
+-- CHEST FARM LOGIC (PERFECTED FOR BLOX FRUITS)
 -- ==========================================
 
 local chestFarmActive = false
 local noclipConnection = nil
 
--- Noclip (проходження крізь стіни)
+-- Noclip
 local function toggleNoclip(state)
 	if state then
 		noclipConnection = RunService.Stepped:Connect(function()
@@ -205,10 +205,32 @@ local function toggleNoclip(state)
 	end
 end
 
+-- Функція для перевірки, чи є об'єкт скринею у Blox Fruits
+local function isChest(obj)
+	-- Blox Fruits використовує назви на кшталт "Chest1", "Chest2", "Chest3" тощо.
+	-- Іноді вони лежать у workspace.Map або інших папках.
+	if obj:IsA("Model") or obj:IsA("Part") then
+		local name = string.lower(obj.Name)
+		-- Перевіряємо, чи містить назва "chest"
+		if string.find(name, "chest") then
+			-- Додаткова перевірка: якщо це модель, чи є всередині TouchInterest
+			-- (саме через TouchInterest гравець збирає скриню)
+			local hasTouchInterest = false
+			for _, child in pairs(obj:GetDescendants()) do
+				if child:IsA("TouchTransmitter") then
+					hasTouchInterest = true
+					break
+				end
+			end
+			return hasTouchInterest
+		end
+	end
+	return false
+end
+
 -- Основний цикл ферми
 local function startChestFarm()
 	task.spawn(function()
-		-- Створюємо BodyVelocity, щоб персонаж не падав під час польоту (вбиваємо гравітацію)
 		local antiGravity = Instance.new("BodyVelocity")
 		antiGravity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
 		antiGravity.Velocity = Vector3.new(0, 0, 0)
@@ -220,43 +242,56 @@ local function startChestFarm()
 			local hrp = char:FindFirstChild("HumanoidRootPart")
 			if not hrp then continue end
 
-			-- Пошук найближчої скрині
+			-- Пошук найближчої скрині серед УСІХ об'єктів у workspace
 			local nearestChest = nil
 			local shortestDistance = math.huge
+			local targetPartToTouch = nil
 
-			for _, obj in pairs(workspace:GetChildren()) do
-				if string.find(obj.Name, "Chest") then
-					local targetPart = nil
-					if obj:IsA("BasePart") then
-						targetPart = obj
+			-- Перебираємо всіх нащадків workspace, щоб знайти скрині навіть у папках
+			for _, obj in pairs(workspace:GetDescendants()) do
+				if isChest(obj) then
+					-- Знаходимо частину (Part), до якої треба доторкнутися
+					local touchPart = nil
+					if obj:IsA("BasePart") and obj:FindFirstChildWhichIsA("TouchTransmitter") then
+						touchPart = obj
 					elseif obj:IsA("Model") then
-						targetPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+						-- Шукаємо BasePart всередині моделі, що має TouchTransmitter
+						for _, child in pairs(obj:GetDescendants()) do
+							if child:IsA("BasePart") and child:FindFirstChildWhichIsA("TouchTransmitter") then
+								touchPart = child
+								break
+							end
+						end
+						-- Якщо не знайшли з TouchTransmitter, беремо PrimaryPart
+						if not touchPart then
+							touchPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+						end
 					end
 
-					if targetPart then
-						local dist = (hrp.Position - targetPart.Position).Magnitude
+					if touchPart then
+						local dist = (hrp.Position - touchPart.Position).Magnitude
 						if dist < shortestDistance then
 							shortestDistance = dist
-							nearestChest = targetPart
+							nearestChest = obj
+							targetPartToTouch = touchPart
 						end
 					end
 				end
 			end
 
 			-- Якщо знайшли скриню
-			if nearestChest then
-				antiGravity.Parent = hrp -- Вмикаємо левітацію
-				local speed = 300 -- Швидкість магніту
+			if nearestChest and targetPartToTouch then
+				antiGravity.Parent = hrp
+				local speed = 300
 
-				-- Летимо до скрині кадр за кадром (набагато стабільніше для експлойтів, ніж Tween)
-				while chestFarmActive and nearestChest.Parent and (hrp.Position - nearestChest.Position).Magnitude > 3 do
+				-- Летимо до скрині
+				while chestFarmActive and nearestChest.Parent and (hrp.Position - targetPartToTouch.Position).Magnitude > 3 do
 					local dt = RunService.Heartbeat:Wait()
-					local direction = (nearestChest.Position - hrp.Position).Unit
+					local direction = (targetPartToTouch.Position - hrp.Position).Unit
 					local step = direction * (speed * dt)
 
-					-- Якщо наступний крок перелетить скриню, просто тепаємось в неї
-					if (hrp.Position - nearestChest.Position).Magnitude < step.Magnitude then
-						hrp.CFrame = nearestChest.CFrame
+					if (hrp.Position - targetPartToTouch.Position).Magnitude < step.Magnitude then
+						hrp.CFrame = targetPartToTouch.CFrame
 						break
 					else
 						hrp.CFrame = hrp.CFrame + step
@@ -264,24 +299,29 @@ local function startChestFarm()
 				end
 
 				-- Збір скрині
-				if chestFarmActive and nearestChest.Parent and (hrp.Position - nearestChest.Position).Magnitude <= 10 then
+				if chestFarmActive and nearestChest.Parent and (hrp.Position - targetPartToTouch.Position).Magnitude <= 10 then
 					if firetouchinterest then
-						firetouchinterest(hrp, nearestChest, 0)
+						firetouchinterest(hrp, targetPartToTouch, 0)
 						task.wait(0.05)
-						firetouchinterest(hrp, nearestChest, 1)
+						firetouchinterest(hrp, targetPartToTouch, 1)
 					else
-						-- Резервний варіант, якщо firetouchinterest дасть збій
-						hrp.CFrame = nearestChest.CFrame
+						hrp.CFrame = targetPartToTouch.CFrame
 					end
-					task.wait(0.5) -- Даємо час серверу обробити збір і видалити скриню
+					
+					-- Чекаємо, поки скриня зникне, або максимум 1 секунду
+					local waitTime = 0
+					while nearestChest.Parent and waitTime < 1 do
+						task.wait(0.1)
+						waitTime = waitTime + 0.1
+					end
 				end
 			else
-				antiGravity.Parent = nil -- Вимикаємо левітацію, якщо немає скринь
+				-- Якщо скринь немає (всі зібрані) - чекаємо
+				antiGravity.Parent = nil
 				task.wait(1)
 			end
 		end
 
-		-- Очищення після вимкнення
 		if antiGravity then
 			antiGravity:Destroy()
 		end
@@ -304,7 +344,6 @@ chestFarmBtn.MouseButton1Click:Connect(function()
 		chestFarmBtn.BorderColor3 = PURPLE_BORDER
 		toggleNoclip(false)
 		
-		-- Додаткове очищення, якщо гравець вимкнув функцію під час польоту
 		if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
 			local bv = Player.Character.HumanoidRootPart:FindFirstChildWhichIsA("BodyVelocity")
 			if bv then bv:Destroy() end
