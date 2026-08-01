@@ -234,7 +234,7 @@ local function stopFlying()
 end
 
 -- ==========================================
--- FIXED AUTO ATTACK FOR DELTA/MOBILE
+-- AUTO ATTACK & WEAPON HITBOX SPAM
 -- ==========================================
 local autoAttackActive = false
 local fastAttackActiveUI = false
@@ -244,15 +244,13 @@ local function toggleAutoAttack(state)
 	if state then
 		task.spawn(function()
 			while autoAttackActive do
-				task.wait(0.1) -- Оптимальна затримка для реєстрації шкоди сервером
+				task.wait(0.1)
 				local char = Player.Character
 				if char then
 					local tool = char:FindFirstChildOfClass("Tool")
 					if tool then
 						pcall(function() tool:Activate() end)
 					end
-					
-					-- Альтернативні методи кліку для гарантії на Delta
 					pcall(function()
 						VirtualUser:CaptureController()
 						VirtualUser:ClickButton1(Vector2.new(50, 50))
@@ -391,7 +389,7 @@ chestFarmBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- MOB FARM LOGIC (FULLY FIXED)
+-- MOB FARM LOGIC (FIXED QUESTS & NPC SEARCH)
 -- ==========================================
 mobFarmActive = false
 local QuestList = {
@@ -440,24 +438,13 @@ local function getQuestDataForLevel(playerLevel)
 	return bestQuest
 end
 
-local function getNearestEnemy()
-	local nearest = nil
-	local shortest = math.huge
-	local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return nil end
-
-	if workspace:FindFirstChild("Enemies") then
-		for _, enemy in pairs(workspace.Enemies:GetChildren()) do
-			if enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 and enemy:FindFirstChild("HumanoidRootPart") then
-				local dist = (hrp.Position - enemy.HumanoidRootPart.Position).Magnitude
-				if dist < shortest then
-					shortest = dist
-					nearest = enemy
-				end
-			end
+local function findNPC(npcName)
+	for _, obj in pairs(workspace:GetDescendants()) do
+		if obj.Name == npcName and obj:FindFirstChild("HumanoidRootPart") then
+			return obj
 		end
 	end
-	return nearest
+	return nil
 end
 
 local function startMobFarm()
@@ -476,35 +463,21 @@ local function startMobFarm()
 			
 			if not questGui or not questGui.Visible then
 				local targetQuest = getQuestDataForLevel(playerLevel)
-				local npc = workspace.NPCs:FindFirstChild(targetQuest.NPCName)
+				local npc = findNPC(targetQuest.NPCName)
 				
 				if npc and npc:FindFirstChild("HumanoidRootPart") then
-					-- Змінено дистанцію до 8 стадів, щоб сервер Blox Fruits дозволив взяти квест
 					flyTo(npc.HumanoidRootPart.CFrame, 300, function()
 						return mobFarmActive and (not questGui or not questGui.Visible)
-					end, 8)
+					end, 4)
 					
 					if mobFarmActive and (not questGui or not questGui.Visible) then
 						pcall(function()
 							ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", targetQuest.QuestId, targetQuest.QuestNum)
 						end)
-						task.wait(1.5)
-					end
-				else
-					local targetEnemy = getNearestEnemy()
-					if targetEnemy then
-						local farmCFrame = targetEnemy.HumanoidRootPart.CFrame * CFrame.new(0, 8, 0)
-						flyTo(farmCFrame, 300, function()
-							return mobFarmActive and targetEnemy and targetEnemy:FindFirstChild("Humanoid") and targetEnemy.Humanoid.Health > 0
-						end, 3)
-						if targetEnemy and targetEnemy:FindFirstChild("Humanoid") and targetEnemy.Humanoid.Health > 0 then
-							equipWeapon()
-							char.HumanoidRootPart.CFrame = farmCFrame * CFrame.Angles(-math.rad(80), 0, 0)
-						end
-					else
-						stopFlying()
 						task.wait(1)
 					end
+				else
+					task.wait(0.5)
 				end
 			else
 				local success, questTitle = pcall(function() return string.lower(questGui.Container.QuestTitle.Title.Text) end)
@@ -513,15 +486,16 @@ local function startMobFarm()
 				local targetEnemy = nil
 				local shortestDist = math.huge
 				
-				for _, enemy in pairs(workspace.Enemies:GetChildren()) do
-					if enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 and enemy:FindFirstChild("HumanoidRootPart") then
-						local cleanName = string.lower(enemy.Name):gsub(" %[%w+%. %d+%]", "")
-						
-						if string.find(questTitle, cleanName) then
-							local dist = (char.HumanoidRootPart.Position - enemy.HumanoidRootPart.Position).Magnitude
-							if dist < shortestDist then
-								shortestDist = dist
-								targetEnemy = enemy
+				if workspace:FindFirstChild("Enemies") then
+					for _, enemy in pairs(workspace.Enemies:GetChildren()) do
+						if enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 and enemy:FindFirstChild("HumanoidRootPart") then
+							local cleanName = string.lower(enemy.Name):gsub(" %[%w+%. %d+%]", "")
+							if string.find(questTitle, cleanName) then
+								local dist = (char.HumanoidRootPart.Position - enemy.HumanoidRootPart.Position).Magnitude
+								if dist < shortestDist then
+									shortestDist = dist
+									targetEnemy = enemy
+								end
 							end
 						end
 					end
@@ -577,76 +551,35 @@ mobFarmBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- HITBOX ACCURATE LOGIC
+-- WEAPON HITBOX ACCURATE LOGIC
 -- ==========================================
 local hitboxActive = false
 local HITBOX_SIZE = Vector3.new(30, 30, 30)
-local DEFAULT_SIZE = Vector3.new(2, 2, 1)
-
-local function modifyHitbox(targetChar, expand)
-	if not targetChar or targetChar == Player.Character then return end
-	
-	local hrp = targetChar:FindFirstChild("HumanoidRootPart")
-	local hum = targetChar:FindFirstChild("Humanoid")
-	
-	if hrp and hum and hum.Health > 0 then
-		if expand then
-			if hrp.Size ~= HITBOX_SIZE then
-				hrp.Size = HITBOX_SIZE
-				hrp.Transparency = 0.8
-				hrp.BrickColor = BrickColor.new("Bright purple")
-				hrp.Material = Enum.Material.Neon
-				hrp.CanCollide = false
-				hrp.Massless = true
-			end
-		else
-			if hrp.Size ~= DEFAULT_SIZE then
-				hrp.Size = DEFAULT_SIZE
-				hrp.Transparency = 1
-				hrp.CanCollide = false
-				hrp.Massless = false
-			end
-		end
-	end
-end
 
 local function startHitboxLoop()
 	task.spawn(function()
 		while hitboxActive do
 			local char = Player.Character
-			local hasWeapon = char and char:FindFirstChildOfClass("Tool") ~= nil
-			
-			if workspace:FindFirstChild("Enemies") then
-				for _, enemy in pairs(workspace.Enemies:GetChildren()) do
-					modifyHitbox(enemy, hasWeapon)
+			if char then
+				local tool = char:FindFirstChildOfClass("Tool")
+				if tool then
+					for _, part in pairs(tool:GetDescendants()) do
+						if part:IsA("BasePart") then
+							part.Size = HITBOX_SIZE
+							part.Transparency = 0.8
+							part.CanCollide = false
+							part.Massless = true
+						end
+					end
 				end
 			end
-			
-			if workspace:FindFirstChild("Characters") then
-				for _, playerChar in pairs(workspace.Characters:GetChildren()) do
-					modifyHitbox(playerChar, hasWeapon)
-				end
-			end
-			
 			task.wait(0.5)
-		end
-		
-		if workspace:FindFirstChild("Enemies") then
-			for _, enemy in pairs(workspace.Enemies:GetChildren()) do
-				modifyHitbox(enemy, false)
-			end
-		end
-		if workspace:FindFirstChild("Characters") then
-			for _, playerChar in pairs(workspace.Characters:GetChildren()) do
-				modifyHitbox(playerChar, false)
-			end
 		end
 	end)
 end
 
 hitboxBtn.MouseButton1Click:Connect(function()
 	hitboxActive = not hitboxActive
-	
 	if hitboxActive then
 		hitboxBtn.Text = "Hitbox Accurate ON"
 		hitboxBtn.TextColor3 = GREEN
